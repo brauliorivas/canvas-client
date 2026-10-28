@@ -172,4 +172,3 @@ The agreed design is in [doc/implementation-plan.md](doc/implementation-plan.md)
 ## License
 
 EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0. See [LICENSE](LICENSE).
-# canvas-client
