@@ -71,7 +71,11 @@ lein cli homework
 
 Select the school assignment, a registered AWS course, and one gradeable AWS activity. Knowledge checks, quizzes, and labs are selected through their Canvas gradebook assignments.
 
-Confirm the source and destination maximum points, then enter two late-penalty percentages. Canvas maximums are prefilled; explicit local overrides are allowed. The app uses **Available until** (`lock_at`), never the due date (`due_at`). If the base cutoff is missing, enter a local fallback in `YYYY-MM-DD HH:mm` format using the configured timezone, or ISO 8601 with a UTC offset. This does not change Canvas dates.
+Confirm the source and destination maximum points, choose the number of late days separating the two penalties (**6 days by default**), then enter both penalty percentages. The first rate applies up to and including that number of late days; the second applies after it. Canvas maximums are prefilled; explicit local overrides are allowed. The app uses **Available until** (`lock_at`), never the due date (`due_at`). If the base cutoff is missing, enter a local fallback in `YYYY-MM-DD HH:mm` format using the configured timezone, or ISO 8601 with a UTC offset. This does not change Canvas dates.
+
+The suggested penalties are **0% within the configured days** and **50% after those days**. Press Enter to accept either suggestion or type a different percentage. Editing an existing mapping prefills its saved percentages.
+
+The day threshold is stored with each homework mapping and shown in its confirmation summary. Existing mappings created before this setting retain their original 14-day rule until you edit and save them using `homework`. Editing an already configured threshold prefills its saved value.
 
 Individual student cutoff overrides take priority. Applicable section cutoffs use the most lenient date, including an explicit removal of a cutoff; a missing effective cutoff needs the configured local fallback. Unsupported group or differentiation-tag availability overrides are skipped rather than guessed.
 
@@ -108,8 +112,8 @@ For example, `44/55` becomes `16/20`. A 20% late penalty produces `12.80/20`.
 
 - Select the highest **graded attempt**, with that attempt's own submission time. Equal scores prefer the earliest attempt.
 - At or before the effective cutoff: no deduction.
-- Later than the cutoff through exactly 14 elapsed days: the first percentage.
-- More than 14 elapsed days: the second percentage. The percentages are not cumulative.
+- Later than the cutoff through exactly the configured number of elapsed days (default 6): the first percentage.
+- Beyond that number of late days: the second percentage. The percentages are not cumulative.
 - Use exact rational arithmetic for conversion and deductions, then round the final result half up to at most two decimals. The result stays between zero and the configured destination maximum.
 - Registered students with genuinely unsubmitted work receive a proposed zero only after their cutoff. Pending grading is skipped.
 - Absent students, excused work, ambiguous identities, unavailable submissions, incomplete attempt histories, or missing submission times are skipped.

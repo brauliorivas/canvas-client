@@ -18,15 +18,20 @@
       (domain/points r))))
 
 (defn calculate [mapping score submitted-at cutoff]
-  (let [{:keys [source-max destination-max penalty-within penalty-after]}
-        (domain/validate-mapping mapping)
+  (let [days (domain/penalty-days mapping)
+        {:keys [source-max destination-max penalty-within penalty-after]}
+        (domain/validate-mapping (assoc mapping :penalty-days days))
+        ;; Legacy tier names are part of saved operation fingerprints. Preserve
+        ;; them until the mapping is edited, so retries keep the same comment reference.
+        within-tier (if (contains? mapping :penalty-days) :within-window :within-two-weeks)
+        after-tier (if (contains? mapping :penalty-days) :after-window :after-two-weeks)
         submitted (domain/instant submitted-at)
         deadline (domain/instant cutoff)
         late (Duration/between deadline submitted)
         tier (cond (not (.isAfter submitted deadline)) :on-time
-                   (not (pos? (.compareTo late (Duration/ofDays 14)))) :within-two-weeks
-                   :else :after-two-weeks)
-        penalty (case tier :on-time 0M :within-two-weeks penalty-within penalty-after)
+                   (not (pos? (.compareTo late (Duration/ofDays days)))) within-tier
+                   :else after-tier)
+        penalty (cond (= tier :on-time) 0M (= tier within-tier) penalty-within :else penalty-after)
         scaled (* (/ (rationalize (domain/decimal score)) (rationalize source-max))
                   (rationalize destination-max))
         final (max 0 (min (rationalize destination-max)
@@ -131,15 +136,18 @@
   (str (.atZone ^Instant (domain/instant timestamp) (ZoneId/of timezone))))
 
 (defn- penalty-comment [mapping row timezone]
-  (str "Calificación transferida desde AWS Academy (" (:source-name mapping) "). "
+  (let [window (if (contains? mapping :penalty-days)
+                 (str (domain/penalty-days mapping) " días") "dos semanas")]
+    (str "Calificación transferida desde AWS Academy (" (:source-name mapping) "). "
        "Nota original: " (domain/points (:source-score row)) "/" (domain/points (:source-max mapping))
        "; equivalencia: " (:scaled row) "/" (domain/points (:destination-max mapping)) ". "
        "Disponible hasta: " (local-time (:cutoff row) timezone) ". "
        "Entrega: " (local-time (:submitted-at row) timezone) ". "
-       "Penalización por atraso " (if (= :within-two-weeks (:tier row))
-                                    "de hasta dos semanas (inclusive)" "de más de dos semanas")
+       "Penalización por atraso " (if (#{:within-window :within-two-weeks} (:tier row))
+                                    (str "de hasta " window " (inclusive)")
+                                    (str "de más de " window))
        ": " (:penalty row) "% de la nota obtenida (" (:deduction row) " puntos). "
-       "Nota final: " (:grade row) "/" (domain/points (:destination-max mapping)) "."))
+       "Nota final: " (:grade row) "/" (domain/points (:destination-max mapping)) ".")))
 
 (defn propose-row
   [{:keys [mapping destination match source-submission destination-submission quiz-attempts

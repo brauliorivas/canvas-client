@@ -36,6 +36,30 @@
     (is (thrown? clojure.lang.ExceptionInfo (domain/percentage value))))
   (is (= 100M (domain/percentage "100"))))
 
+(deftest configurable-late-day-boundaries
+  (let [mapping (domain/validate-mapping policy)]
+    (is (= 6 (:penalty-days mapping)))
+    (doseq [[timestamp grade tier]
+            [[cutoff "16.00" :on-time]
+             ["2026-01-01T00:00:00.001Z" "12.80" :within-window]
+             ["2026-01-07T00:00:00Z" "12.80" :within-window]
+             ["2026-01-07T00:00:00.001Z" "8.00" :after-window]]]
+      (let [result (grading/calculate mapping 44 timestamp cutoff)]
+        (is (= grade (:grade result)))
+        (is (= tier (:tier result)))))
+    (is (= "12.80" (:grade (grading/calculate (assoc mapping :penalty-days 10)
+                                             44 "2026-01-11T00:00:00Z" cutoff))))
+    (is (= "8.00" (:grade (grading/calculate (assoc mapping :penalty-days 10)
+                                            44 "2026-01-11T00:00:00.001Z" cutoff))))
+    (is (= "12.80" (:grade (grading/calculate (assoc mapping :penalty-days 3)
+                                             44 "2026-01-04T00:00:00Z" cutoff)))))
+  (is (= 14 (domain/penalty-days policy))))
+
+(deftest late-days-validation
+  (doseq [value [nil "" 0 -1 "1.5" "six" "9223372036854775807"]]
+    (is (thrown? clojure.lang.ExceptionInfo (domain/positive-days value))))
+  (is (= 6 (domain/positive-days "6"))))
+
 (deftest email-matching
   (let [av [{:id 1 :name "Official name" :login_id " Student@Example.edu "}
             {:id 2 :login_id "missing@example.edu"}]
@@ -126,3 +150,16 @@
                                                          {:attempt 1 :score 44 :workflow_state "graded"
                                                           :submitted_at "2026-01-02T00:00:00Z"}
                                                          :destination-submission current)))))))
+
+(deftest comments-use-the-saved-window
+  (let [input (assoc row-input :source-submission {:attempt 1 :score 44 :workflow_state "graded"
+                                                  :submitted_at "2026-01-08T00:00:00Z"})
+        after (grading/propose-row (assoc input :mapping (assoc policy :penalty-days 6)))
+        within (grading/propose-row (assoc input :mapping (assoc policy :penalty-days 10)))
+        legacy (grading/propose-row input)]
+    (is (= "8.00" (:grade after)))
+    (is (re-find #"de más de 6 días" (:comment after)))
+    (is (= "12.80" (:grade within)))
+    (is (re-find #"de hasta 10 días \(inclusive\)" (:comment within)))
+    (is (= :within-two-weeks (:tier legacy)))
+    (is (re-find #"de hasta dos semanas" (:comment legacy)))))

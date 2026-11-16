@@ -158,8 +158,9 @@
                     canvas/assignments (fn [api _] [(if (= av-url (:url api)) destination source)])]
         (is (re-find #"Saved registration" (interact "10\n20\ny\nn\n" #(commands/register! ctx))))
         (is (= 1 (count (service/registrations ctx))))
-        (is (re-find #"Saved homework" (interact "10\n40\n1\n30\n\n\n20\n50\ny\n" #(commands/homework! ctx))))
+        (is (re-find #"Saved homework" (interact "10\n40\n1\n30\n\n\n\n20\n50\ny\n" #(commands/homework! ctx))))
         (is (= 2 (:version (first (service/mappings ctx)))))
+        (is (= 6 (:penalty-days (first (service/mappings ctx)))))
         (is (re-find #"Dry run complete" (interact "1\n" #(commands/grade! ctx true))))
         (is (empty? @writes))
         (is (re-find #"Results saved to SQLite" (interact "1\ny\n" #(commands/grade! ctx false))))
@@ -172,7 +173,7 @@
     (fn [ctx _ remote _]
       (swap! remote assoc-in [:destination :overrides] [{:student_ids [1] :lock_at nil}])
       (with-redefs [canvas/assignments (fn [api _] [(if (= av-url (:url api)) destination source)])]
-        (interact "10\n40\n1\n30\n\n\n20\n50\n2026-01-03 00:00\ny\n" #(commands/homework! ctx))
+        (interact "10\n40\n1\n30\n\n\n\n20\n50\n2026-01-03 00:00\ny\n" #(commands/homework! ctx))
         (let [mapping (first (service/mappings ctx))
               preview (service/grade-preview ctx mapping)]
           (is (= "2026-01-03T00:00:00Z" (:local-cutoff mapping)))
@@ -201,3 +202,23 @@
           (let [result (service/apply-grades! ctx preview {:confirmed? true :student-ids #{1 2}})]
             (is (= [:failed :succeeded] (mapv :status (:results result))))
             (is (= [2] (mapv :user-id @writes)))))))))
+
+(deftest configured-late-days-persist-and-control-grade-and-comment
+  (with-system
+    (fn [ctx _ remote writes]
+      (with-redefs [canvas/assignments (fn [api _] [(if (= av-url (:url api)) destination source)])]
+        (let [output (interact "10\n40\n1\n30\n\n\ninvalid\n0\n3\n20\n50\ny\n" #(commands/homework! ctx))
+              mapping (first (service/mappings ctx))]
+          (is (re-find #"After how many late days should the second penalty apply\? \[6\]" output))
+          (is (re-find #"up to 3 days \(inclusive\)" output))
+          (is (re-find #"more than 3 days" output))
+          (is (= 3 (:penalty-days mapping)))
+          (swap! remote assoc-in [:source-subs 101 :submitted_at] "2026-01-05T00:00:00Z")
+          (let [preview (service/grade-preview ctx mapping)]
+            (is (= "8.00" (get-in preview [:rows 0 :grade])))
+            (service/apply-grades! ctx preview {:confirmed? true :student-ids #{1}})
+            (is (= "8.00" (:grade (first @writes))))
+            (is (re-find #"de más de 3 días" (:comment (first @writes)))))
+          (let [edited-output (interact "10\n40\n1\n30\n\n\n\n\n\ny\n" #(commands/homework! ctx))]
+            (is (re-find #"second penalty apply\? \[3\]" edited-output))
+            (is (= 3 (:penalty-days (first (service/mappings ctx)))))))))))

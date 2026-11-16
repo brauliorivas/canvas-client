@@ -68,10 +68,12 @@
                                    (or (:destination-max old) (:points_possible destination))
                                    domain/positive-decimal)
         _ (ui/message :cyan "A 20% late penalty deducts 20% of the earned converted grade: 80 becomes 64.")
-        within (ui/value! "Penalty percent when late by up to 14 days (inclusive)"
-                          (:penalty-within old) domain/percentage)
-        after (ui/value! "Penalty percent when late by more than 14 days"
-                         (:penalty-after old) domain/percentage)
+        days (ui/value! "After how many late days should the second penalty apply?"
+                        (or (:penalty-days old) 6) domain/positive-days)
+        within (ui/value! (str "Penalty percent when late by up to " days " days (inclusive)")
+                          (or (:penalty-within old) 0) domain/percentage)
+        after (ui/value! (str "Penalty percent when late by more than " days " days")
+                         (or (:penalty-after old) 50) domain/percentage)
         needs-fallback? (or (nil? (:lock_at destination))
                             (some #(and (contains? % :lock_at) (nil? (:lock_at %)))
                                   (:overrides destination)))
@@ -83,9 +85,10 @@
                        (:local-cutoff old))
         value (service/mapping-data registration destination source
                                     {:source-max source-max :destination-max destination-max
-                                     :penalty-within within :penalty-after after :local-cutoff local-cutoff})]
+                                     :penalty-days days :penalty-within within :penalty-after after
+                                     :local-cutoff local-cutoff})]
     (ui/print-table [:destination-name :source-name :source-max :destination-max
-                     :penalty-within :penalty-after]
+                     :penalty-days :penalty-within :penalty-after]
                     [value])
     (ui/message :cyan (str "Available until: " (or (ui/format-time (:lock_at destination) (:timezone ctx))
                                                  "individual override / local fallback")
